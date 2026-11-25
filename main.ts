@@ -19,9 +19,15 @@ export const ENTRY =
 // The gate: /output/entry.txt must be UTF-8 text of 1 to 140 characters,
 // not only white space. Fail loudly here instead of shipping an invalid entry.
 // Gate-guard: reject control characters / newlines — the entry must be a
-// single printable line.
-if (/[\x00-\x1F\x7F]/.test(ENTRY)) {
-  throw new Error("entry must not contain control characters or newlines");
+// single printable line. Also reject Unicode line/paragraph separators and
+// a BOM, which would break the "one line" reading without showing up.
+if (/[\x00-\x1F\x7F\u2028\u2029\uFEFF]/.test(ENTRY)) {
+  throw new Error(
+    "entry must not contain control characters, newlines, Unicode line separators, or a BOM",
+  );
+}
+if (!/[A-Za-z]/.test(ENTRY)) {
+  throw new Error("entry must contain at least one letter");
 }
 
 const length = [...ENTRY].length;
@@ -38,13 +44,16 @@ const outPath = join(outDir, "entry.txt");
 writeFileSync(outPath, ENTRY, "utf8");
 
 // Read-back verification: the bytes on disk must be exactly the entry.
-const written = readFileSync(outPath, "utf8");
-if (written !== ENTRY) {
-  throw new Error("read-back mismatch: written file does not equal ENTRY");
+const written = readFileSync(outPath);
+const entryBytes = Buffer.from(ENTRY, "utf8");
+if (!written.equals(entryBytes)) {
+  throw new Error(
+    "read-back mismatch: written bytes do not equal the entry's UTF-8 bytes (no trailing newline allowed)",
+  );
 }
 
 const sha256 = createHash("sha256").update(ENTRY, "utf8").digest("hex");
-if (createHash("sha256").update(written, "utf8").digest("hex") !== sha256) {
+if (createHash("sha256").update(written).digest("hex") !== sha256) {
   throw new Error("read-back mismatch: written file sha256 does not match");
 }
 console.log(`sha256: ${sha256}`);
